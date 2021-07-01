@@ -4,12 +4,22 @@
 
 #include <mbed.h>
 
+#define L3G_FS_245DPS (0)
+#define L3G_FS_500DPS (1)
+#define L3G_FS_2000DPS (2)
+
 class L3GD20H
 {
 public:
     L3GD20H(PinName mosi, PinName miso, PinName sck, PinName cs);
 
-    int init();
+    int init(int dr, int bw, int fs, bool low_odr);
+
+    int set_enable(bool power, bool x, bool y, bool z);
+
+    int set_source(bool hp_en, int out_sel);
+
+    int read(int16_t axes[3]);
 
 private:
     SPI _spi;

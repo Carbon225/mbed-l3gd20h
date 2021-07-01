@@ -8,6 +8,22 @@
 #define SPI_READ_BIT      (0b10000000)
 #define SPI_INCREMENT_BIT (0b01000000)
 
+#define CTRL1_XEN_BIT (1u << 1)
+#define CTRL1_YEN_BIT (1u << 0)
+#define CTRL1_ZEN_BIT (1u << 2)
+#define CTRL1_PD_BIT (1u << 3)
+#define CTRL1_BW_OFFSET (4)
+#define CTRL1_DR_OFFSET (6)
+
+#define CTRL4_FS_OFFSET (4)
+
+#define CTRL5_OUT_SEL_MASK (0b111)
+#define CTRL5_OUT_SEL_OFFSET (0)
+#define CTRL5_HP_EN_BIT (1u << 4)
+
+#define LOW_ODR_I2C_DIS_BIT (1u << 3);
+#define LOW_ODR_LOW_ODR_BIT (1u << 0);
+
 #define L3GD20H_WHOAMI (0b11010111)
 
 enum REG
@@ -46,19 +62,39 @@ enum REG
     LOW_ODR        = 0x39,
 };
 
+enum ERROR_CODES
+{
+    ERROR_WHOAMI = 1,
+};
+
 L3GD20H::L3GD20H(PinName mosi, PinName miso, PinName sck, PinName cs)
     : _spi(mosi, miso, sck, cs, use_gpio_ssel)
 {
 
 }
 
-int L3GD20H::init()
+int L3GD20H::init(int dr, int bw, int fs, bool low_odr)
 {
     _spi.format(8, SPI_MODE);
     _spi.frequency(SPI_HZ);
 
     if (who_am_i() != L3GD20H_WHOAMI)
-        return 1;
+        return ERROR_WHOAMI;
+
+    uint8_t val = 0;
+    val |= LOW_ODR_I2C_DIS_BIT;
+    if (low_odr)
+        val |= LOW_ODR_LOW_ODR_BIT;
+    write_reg(LOW_ODR, &val, 1, false);
+
+    val = 0;
+    val |= fs << CTRL4_FS_OFFSET;
+    write_reg(CTRL4, &val, 1, false);
+
+    val = 0;
+    val |= dr << CTRL1_DR_OFFSET;
+    val |= bw << CTRL1_BW_OFFSET;
+    write_reg(CTRL1, &val, 1, false);
 
     return 0;
 }
@@ -102,4 +138,72 @@ uint8_t L3GD20H::who_am_i()
     uint8_t val;
     read_reg(WHO_AM_I, &val, 1, false);
     return val;
+}
+
+int L3GD20H::set_enable(bool power, bool x, bool y, bool z)
+{
+    uint8_t val;
+    read_reg(CTRL1, &val, 1, false);
+
+    if (power)
+        val |= CTRL1_PD_BIT;
+    else
+        val &= ~CTRL1_PD_BIT;
+
+    if (x)
+        val |= CTRL1_XEN_BIT;
+    else
+        val &= ~CTRL1_XEN_BIT;
+
+    if (y)
+        val |= CTRL1_YEN_BIT;
+    else
+        val &= ~CTRL1_YEN_BIT;
+
+    if (z)
+        val |= CTRL1_ZEN_BIT;
+    else
+        val &= ~CTRL1_YEN_BIT;
+
+    write_reg(CTRL1, &val, 1, false);
+
+    return 0;
+}
+
+int L3GD20H::read(int16_t axes[3])
+{
+    uint8_t buf[3 * 2];
+    read_reg(OUT_X_L, buf, sizeof buf, true);
+
+    axes[0] = buf[1];
+    axes[0] <<= 8;
+    axes[0] |= buf[0];
+
+    axes[1] = buf[3];
+    axes[1] <<= 8;
+    axes[1] |= buf[2];
+
+    axes[2] = buf[5];
+    axes[2] <<= 8;
+    axes[2] |= buf[4];
+
+    return 0;
+}
+
+int L3GD20H::set_source(bool hp_en, int out_sel)
+{
+    uint8_t val;
+    read_reg(CTRL5, &val, 1, false);
+
+    val &= ~CTRL5_OUT_SEL_MASK;
+    val |= out_sel << CTRL5_OUT_SEL_OFFSET;
+
+    if (hp_en)
+        val |= CTRL5_HP_EN_BIT;
+    else
+        val &= ~CTRL5_HP_EN_BIT;
+
+    write_reg(CTRL5, &val, 1, false);
+
+    return 0;
 }
