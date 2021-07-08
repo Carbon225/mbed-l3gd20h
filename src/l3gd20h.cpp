@@ -1,6 +1,12 @@
 #include <l3gd20h.h>
 
 
+static const float MDPS_SCALE_FOR_FS[] = {
+    8.75f,
+    17.5f,
+    70.f,
+};
+
 #define SPI_MODE (3)
 #define SPI_HZ (10000000)
 
@@ -69,11 +75,12 @@ enum ERROR_CODES
 
 L3GD20H::L3GD20H(PinName mosi, PinName miso, PinName sck, PinName cs)
     : _spi(mosi, miso, sck, cs, use_gpio_ssel)
+    , _fs(L3G_FS_245DPS)
 {
 
 }
 
-int L3GD20H::init(int dr, int bw, int fs, bool low_odr)
+int L3GD20H::init(int dr, int bw, L3G_FS fs, bool low_odr)
 {
     _spi.format(8, SPI_MODE);
     _spi.frequency(SPI_HZ);
@@ -90,6 +97,7 @@ int L3GD20H::init(int dr, int bw, int fs, bool low_odr)
     val = 0;
     val |= fs << CTRL4_FS_OFFSET;
     write_reg(CTRL4, &val, 1, false);
+    _fs = fs;
 
     val = 0;
     val |= dr << CTRL1_DR_OFFSET;
@@ -170,22 +178,20 @@ int L3GD20H::set_enable(bool power, bool x, bool y, bool z)
     return 0;
 }
 
-int L3GD20H::read(int16_t axes[3])
+int L3GD20H::read(float axes[3])
 {
     uint8_t buf[3 * 2];
     read_reg(OUT_X_L, buf, sizeof buf, true);
 
-    axes[0] = buf[1];
-    axes[0] <<= 8;
-    axes[0] |= buf[0];
+    int16_t gx, gy, gz;
 
-    axes[1] = buf[3];
-    axes[1] <<= 8;
-    axes[1] |= buf[2];
+    gx = (int16_t) (buf[1] << 8 | buf[0]);
+    gy = (int16_t) (buf[3] << 8 | buf[2]);
+    gz = (int16_t) (buf[5] << 8 | buf[4]);
 
-    axes[2] = buf[5];
-    axes[2] <<= 8;
-    axes[2] |= buf[4];
+    axes[0] = MDPS_SCALE_FOR_FS[_fs] * (float) gx / 1000.f;
+    axes[1] = MDPS_SCALE_FOR_FS[_fs] * (float) gy / 1000.f;
+    axes[2] = MDPS_SCALE_FOR_FS[_fs] * (float) gz / 1000.f;
 
     return 0;
 }
